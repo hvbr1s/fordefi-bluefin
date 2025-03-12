@@ -4,7 +4,7 @@ package-lock.json
 .DS_Store
 
 # Signer folder containing your Fordefi .pem signing secret
-fordefi_secret/*
+src/fordefi_secret/*
 
 # Dev bin
 bin
