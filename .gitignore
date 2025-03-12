@@ -5,6 +5,7 @@ package-lock.json
 
 # Signer folder containing your Fordefi .pem signing secret
 src/fordefi_secret/*
+/fordefi_secret
 
 # Dev bin
 bin
