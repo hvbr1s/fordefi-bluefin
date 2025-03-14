@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "swap": "tsx src/swap.ts",
+    "pool": "tsx src/pool.ts",
     "transfer": "tsx src/bsc_transfer.ts"
   },
   "keywords": [],
