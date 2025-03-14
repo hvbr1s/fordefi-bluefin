@@ -1,41 +1,24 @@
 import { QueryChain } from "@firefly-exchange/library-sui/dist/src/spot";
-import { SuiClient } from "@firefly-exchange/library-sui";
 import { Transaction } from "@mysten/sui/transactions";
 import { signWithApiSigner } from "../signing/signer";
+import { SuiClient } from "@firefly-exchange/library-sui";
 import { formRequest } from "../api_request/form_request";
 import { createAndSignTx } from "../api_request/pushToApi";
-import dotenv from "dotenv";
 
-// Load Fordefi secrets
-dotenv.config();
-const accessToken = process.env.FORDEFI_API_USER_TOKEN ?? "";
 
-// Initialize SUI client with mainnet endpoint
-const client = new SuiClient({ url: "https://fullnode.mainnet.sui.io:443" });
-// Fordefi vault address on the Sui blockchain
-const suiFordefiVault = "0x70dfa34773429dc83d4b56866acb595471d3d7d79e3fbce035c0179d0617492c"
-
-/**
- * Execute a token swap on Bluefin DEX using the Fordefi custody service
- * 
- * @param poolID - The ID of the Bluefin liquidity pool to use for the swap
- * @param amount - The amount to swap (in smallest unit of the coin)
- * @param aToB - Direction of the swap:
- *               - true: swap from coin A to coin B
- *               - false: swap from coin B to coin A
- * @param byAmountIn - How to interpret the amount parameter:
- *                    - true: amount is the input amount to swap
- *                    - false: amount is the expected output amount
- */
 export async function swapAssets(
   poolID: string,
   amount: number,
   aToB: boolean,
-  byAmountIn: boolean
+  byAmountIn: boolean,
+  accessToken: string,
+  vault_id: string,
+  senderAddress: string,
+  client: SuiClient
 ) {
   // 1. Fetch available SUI coins in the vault (need at least 2: one for swap, one for gas)
   let myCoins = await client.getCoins({
-    owner: suiFordefiVault,
+    owner: senderAddress,
     coinType: "0x2::sui::SUI",
   });
   console.log(myCoins.data)
@@ -57,8 +40,8 @@ export async function swapAssets(
   const tx = new Transaction();
 
   // Set transaction parameters
-  tx.setSender(suiFordefiVault);    // The address initiating the transaction
-  tx.setGasOwner(suiFordefiVault)   // The address paying for gas
+  tx.setSender(senderAddress);    // The address initiating the transaction
+  tx.setGasOwner(senderAddress)   // The address paying for gas
   tx.setGasBudget(10_000_000);      // Maximum gas allowed for this transaction
   tx.setGasPrice(1000);             // Price per gas unit in MIST (Sui's smallest unit)
   
@@ -144,8 +127,7 @@ export async function swapAssets(
   const base64TxData = Buffer.from(bcsData).toString("base64");
 
   // 9. Prepare request body for Fordefi custody service
-  const fordefiVault = "0bbd4f4b-dcb0-47f0-a1a9-4a09614cd8c2"; // Vault ID in Fordefi
-  const requestBody = JSON.stringify(await formRequest(fordefiVault, base64TxData));
+  const requestBody = JSON.stringify(await formRequest(vault_id, base64TxData));
 
   // 10. Create signature for Fordefi API authentication
   const pathEndpoint = "/api/v1/transactions/create-and-wait";
@@ -165,11 +147,3 @@ export async function swapAssets(
   }
   console.log("Transaction completed! ✅");
 }
-
-// // Example usage of the swap function
-// swapAssets(
-//   "0xa701a909673dbc597e63b4586ace6643c02ac0e118382a78b9a21262a4a2e35d", // Bluefin Pool ID for SUI/USDC
-//   1_000_000_000,  // Amount to swap (5.8 SUI)
-//   true,           // Direction: true = SUI to USDC
-//   true,           // byAmountIn: true = amount specified is the input amount
-// ).catch((err) => console.error("Error:", err));
