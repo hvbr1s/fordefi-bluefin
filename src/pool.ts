@@ -1,5 +1,4 @@
 import { openPositionWithFixedAmount } from './operations/create_pool';
-//import { openPositionWithFixedAmount } from './create_pool';
 import dotenv from 'dotenv';
 
 dotenv.config();

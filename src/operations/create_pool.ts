@@ -72,6 +72,7 @@ function _openPositionInternal(
 }
 
 async function _provideLiquidityFixedAmountInternal(
+  senderAddress: string,
   pool: any,
   position: any,
   liquidityInput: any,
@@ -89,7 +90,7 @@ async function _provideLiquidityFixedAmountInternal(
       txb,
       amountAMax.toString(),
       pool.coin_a.address,
-      sender
+      senderAddress
     );
   const [splitCoinB, mergeCoinB] =
     await classes_1.CoinUtils.createCoinWithBalance(
@@ -97,7 +98,7 @@ async function _provideLiquidityFixedAmountInternal(
       txb,
       amountBMax.toString(),
       pool.coin_b.address,
-      sender
+      senderAddress
     );
   txb.moveCall({
     arguments: [
@@ -138,7 +139,7 @@ export async function openPositionWithFixedAmount(
     privateKeyPath: string;
     vaultId: string;
     network: "mainnet" | "testnet";
-    senderAddress?: string;
+    senderAddress: string;
   }
 ) {
   let txb = new TransactionBlock();
@@ -147,7 +148,7 @@ export async function openPositionWithFixedAmount(
   });
   txb = result.txb;
   const position = result.position;
-  txb = await _provideLiquidityFixedAmountInternal(pool, position, params, {
+  txb = await _provideLiquidityFixedAmountInternal(fordefiConfig.senderAddress, pool, position, params, {
     txb,
   });
 
@@ -163,7 +164,7 @@ export async function openPositionWithFixedAmount(
   const bcsBase64 = Buffer.from(bcsData).toString("base64");
 
   // 9. Prepare request body for Fordefi custody service
-  const fordefiVault = "0bbd4f4b-dcb0-47f0-a1a9-4a09614cd8c2"; // Vault ID in Fordefi
+  const fordefiVault = fordefiConfig.vaultId; // Vault ID in Fordefi
   const requestBody = JSON.stringify(await formRequest(fordefiVault, bcsBase64));
 
   // 10. Create signature for Fordefi API authentication

@@ -1,12 +1,14 @@
 import { swapAssets } from './operations/create_swap';
-import { SuiClient } from "@firefly-exchange/library-sui";
+import { SuiClient, getFullnodeUrl } from "@mysten/sui/client";
 import dotenv from 'dotenv';
 
 dotenv.config();
 const accessToken = process.env.FORDEFI_API_USER_TOKEN ?? "";
 
 // Initialize SUI client with mainnet endpoint
-const client = new SuiClient({ url: "https://fullnode.mainnet.sui.io:443" });
+const client = new SuiClient({
+  url: getFullnodeUrl("mainnet"),
+});
 
 async function main() {
 
