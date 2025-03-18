@@ -1,8 +1,7 @@
 import fs from 'fs';
 import * as crypto from 'crypto';
 
-const privateKeyFilePath = './fordefi_secret/private.pem';
-const privateKeyPem = fs.readFileSync(privateKeyFilePath, 'utf8');
+const privateKeyPem = fs.readFileSync('./fordefi_secret/private.pem', 'utf8');
 
 export async  function signWithApiSigner(payload: string): Promise<string> {
 

@@ -1,51 +1,57 @@
 import { QueryChain } from "@firefly-exchange/library-sui/dist/src/spot";
 import { Transaction } from "@mysten/sui/transactions";
-import { signWithApiSigner } from "../signing/signer";
+import { signWithApiSigner } from "../api_request/signer";
 import { SuiClient } from "@firefly-exchange/library-sui";
 import { formRequest } from "../api_request/form_request";
 import { createAndSignTx } from "../api_request/pushToApi";
 
 
 export async function swapAssets(
-  poolID: string,
-  amount: number,
-  aToB: boolean,
-  byAmountIn: boolean,
+  swapParams: any,
   accessToken: string,
   vault_id: string,
   senderAddress: string,
-  client: SuiClient
+  client: SuiClient,
+  config: any
 ) {
-  // 1. Fetch available SUI coins in the vault (need at least 2: one for swap, one for gas)
-  let myCoins = await client.getCoins({
-    owner: senderAddress,
-    coinType: "0x2::sui::SUI",
-  });
-  console.log(myCoins.data)
 
-  // 2. Select specific coin objects for the transaction
-  //    First coin will be used for the actual swap amount
-  //    Second coin will be used to pay for transaction gas
-  const coinForSwap = myCoins.data[0];
-  console.log("DEBUG - Coin for swap -> ", coinForSwap)
-  const coinForGas = myCoins.data[1];
-  console.log("DEBUG - Coin for gas -> ", coinForGas)
-
-  // 3. Query the pool details to get information about the trading pair
-  const qc = new QueryChain(client);
-  const poolState = await qc.getPool(poolID);
-  console.log("DEBUG - PoolState: ", poolState);
-
-  // 4. Build the swap transaction
+  // 1. Build the swap transaction
   const tx = new Transaction();
 
-  // Set transaction parameters
-  tx.setSender(senderAddress);    // The address initiating the transaction
-  tx.setGasOwner(senderAddress)   // The address paying for gas
+  tx.setSender(senderAddress);      // The address initiating the transaction
+  tx.setGasOwner(senderAddress)     // The address paying for gas
   tx.setGasBudget(10_000_000);      // Maximum gas allowed for this transaction
-  tx.setGasPrice(1000);             // Price per gas unit in MIST (Sui's smallest unit)
-  
-  // Specify which coin object pays for gas
+  tx.setGasPrice(1000);             // Price per gas unit in MIST
+
+  // 2. Sorting out SUI coins (we're swapping SUI here )
+  let allCoins = (await client.getCoins({
+    owner: senderAddress,
+    coinType: "0x2::sui::SUI",
+  })).data;
+  allCoins.sort((a, b) => Number(b.balance) - Number(a.balance));
+  console.log("My coins 🪙🪙 -> ", allCoins)
+
+  let coinForGas: any;
+  let coinForSwap: any;
+  if (allCoins.length >= 2) {
+    // Use largest for gas, the second largest for swap
+    coinForGas = allCoins[0];
+    coinForSwap = allCoins[1];
+  } else {
+    // Only 1 coin let's split it!
+    console.log("Only one coin in wallet, let's split it! 🪓🪓")
+    coinForGas = allCoins[0];
+    if (!coinForGas) {
+      throw new Error("No SUI coins found to pay for gas.");
+    }
+  }
+  if (!coinForSwap) {
+    [coinForSwap] = tx.splitCoins(tx.gas, [swapParams.amount]);
+  }
+  console.log("Coin for swap 🤝 -> ", coinForSwap)
+  console.log("Coin for gas ⛽ -> ", coinForGas)
+
+  // We specify which coin object pays for gas
   tx.setGasPayment([
     {
       objectId: coinForGas.coinObjectId,
@@ -54,6 +60,12 @@ export async function swapAssets(
     },
   ]);
 
+  // 3. Query the pool details to get information about the trading pair
+  const qc = new QueryChain(client);
+  const poolState = await qc.getPool(swapParams.poolId);
+  console.log("DEBUG - PoolState: ", poolState);
+  console.log("check")
+
   // 5. Extract coin types from pool state
   const coinA = poolState.coin_a.address
   const coinB = poolState.coin_b.address
@@ -61,9 +73,9 @@ export async function swapAssets(
   // 6. Prepare arguments for the swap based on direction (A→B or B→A)
   let coinAArg;
   let coinBArg;
-  if (aToB) {
+  if (swapParams.aToB) {
     // For A→B swap: Use our SUI coin for A, create empty B coin to receive
-    coinAArg = tx.object(coinForSwap.coinObjectId);
+    coinAArg = coinForSwap
     coinBArg = tx.moveCall({
       package: "0x2",
       module: "coin",
@@ -81,37 +93,29 @@ export async function swapAssets(
       typeArguments: [coinA],
       arguments: [],
     });
-    coinBArg = tx.object(coinForSwap.coinObjectId);
+    coinAArg = coinForSwap
   }
-  
   // 7. Construct the swap function call
   tx.moveCall({
     // Bluefin DEX package ID
-    package: "0x6c796c3ab3421a68158e0df18e4657b2827b1f8fed5ed4b82dba9c935988711b",
+    package: config.CurrentPackage,
     module: "gateway",
     function: "swap_assets",
     arguments: [
       // Sui system clock object - required for time-based operations
       tx.object("0x6"),
       // Bluefin global configuration object
-      tx.object("0x03db251ba509a8d5d8777b6338836082335d93eecbdd09a11e190a1cff51c352"),
-      // The specific liquidity pool we're using for this swap
-      tx.object(poolID),
+      tx.object(config.GlobalConfig),
+      tx.object(swapParams.poolId),
       // Coin A - either our coin or an empty receiver depending on swap direction
       coinAArg,
       // Coin B - either our coin or an empty receiver depending on swap direction
       coinBArg,
-      // Direction of swap (A→B or B→A)
-      tx.pure.bool(aToB),
-      // Whether amount specifies input amount or expected output
-      tx.pure.bool(byAmountIn),
-      // The amount to swap (in smallest unit of the coin)
-      tx.pure.u64(amount),
-      // Minimum amount to receive (slippage protection)
-      tx.pure.u64(1_000_000),
-      // Maximum allowed sqrt price after the swap (price impact protection)
-      // For A→B swaps, this should be **lower** than current sqrt price
-      tx.pure.u128("5295032834")
+      tx.pure.bool(swapParams.aToB),
+      tx.pure.bool(swapParams.byAmountIn),
+      tx.pure.u64(swapParams.amount),
+      tx.pure.u64(swapParams.slippageProtection),
+      tx.pure.u128(swapParams.maximumSqrt)
     ],
     // The specific coin types involved in this swap
     typeArguments: [
